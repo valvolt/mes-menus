@@ -274,6 +274,25 @@ async function getMenusSorted(sort = 'alpha') {
     }
   });
 
+  // Update menu (cuisinier) - permet de modifier le nom d'un menu existant
+  app.put('/api/menus/:id', requireAuth, requireCuisinier, async (req, res) => {
+    const id = Number(req.params.id);
+    const { name } = req.body;
+    if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+
+    try {
+      const result = await db.runAsync(`UPDATE menus SET name = ? WHERE id = ?`, name, id);
+      if (result && result.changes && result.changes > 0) {
+        res.json({ ok: true });
+      } else {
+        res.status(404).json({ error: 'menu not found' });
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'internal' });
+    }
+  });
+
   // List menus with stats and sort
   app.get('/api/menus', requireAuth, requireCuisinier, async (req, res) => {
     const sort = req.query.sort || 'alpha';

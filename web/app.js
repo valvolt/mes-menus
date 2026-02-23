@@ -261,6 +261,52 @@
 
     container.appendChild(adminHeader);
 
+    // Modal to edit an existing menu (opens when cuisinier clicks "Modifier")
+    function showEditMenuModal(menu) {
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay';
+      overlay.innerHTML = `
+        <div class="login-box">
+          <h3>Modifier le repas</h3>
+          <label>Nom<br/><input id="edit-menu-name" value="${menu.name}" /></label>
+          <div class="login-actions">
+            <button id="edit-save" class="btn">Enregistrer</button>
+            <button id="edit-cancel" class="btn hollow">Annuler</button>
+          </div>
+          <div id="edit-error" class="error" style="display:none"></div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      document.getElementById('edit-cancel').addEventListener('click', () => overlay.remove());
+      document.getElementById('edit-save').addEventListener('click', async () => {
+        const newName = document.getElementById('edit-menu-name').value.trim();
+        if (!newName) {
+          const e = document.getElementById('edit-error');
+          e.style.display = 'block';
+          e.textContent = 'Le nom est requis';
+          return;
+        }
+        try {
+          await adminEditMenu(menu.id, newName);
+          overlay.remove();
+        } catch (err) {
+          const e = document.getElementById('edit-error');
+          e.style.display = 'block';
+          e.textContent = (err && err.body && err.body.error) ? err.body.error : 'Erreur';
+        }
+      });
+    }
+
+    async function adminEditMenu(id, newName) {
+      try {
+        await fetchJson(`/api/menus/${id}`, { method: 'PUT', body: { name: newName } });
+        await refreshCaches();
+        renderAdmin();
+      } catch (err) {
+        throw err;
+      }
+    }
+
     // Menus list
     const list = document.createElement('div');
     list.className = 'menu-list';
@@ -278,7 +324,7 @@
       // Quick assign buttons for today..+7 (assign to both meals possibility via modal)
       const assignTodayLunch = document.createElement('button');
       assignTodayLunch.className = 'btn small';
-      assignTodayLunch.textContent = 'Affecter aujourd\'hui (déj)';
+      assignTodayLunch.textContent = 'Affecter aujourd\' (déj)';
       assignTodayLunch.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner'));
       right.appendChild(assignTodayLunch);
 
@@ -287,6 +333,12 @@
       assignTodayDinner.textContent = 'Affecter aujourd\'hui (dîn)';
       assignTodayDinner.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner'));
       right.appendChild(assignTodayDinner);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn small';
+      editBtn.textContent = 'Modifier';
+      editBtn.addEventListener('click', () => showEditMenuModal(m));
+      right.appendChild(editBtn);
 
       item.appendChild(right);
       list.appendChild(item);
