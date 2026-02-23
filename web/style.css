@@ -138,7 +138,8 @@ main{ padding:12px; }
 /* calendar grid */
 .calendar{
   display:grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* Responsive: fit as many day tiles per row as possible on small screens */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap:6px;
   margin-top:10px;
 }
