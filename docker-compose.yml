@@ -1,0 +1,18 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    image: mes-menus:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-cuisinier}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-secret}
+      - PORT=8080
+      - DB_PATH=/data/mes-menus.sqlite
+      - CLIENT_USERNAME=client
+      - CLIENT_PASSWORD=clientpass2
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
