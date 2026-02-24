@@ -129,10 +129,12 @@
     const requested = new Date(dateStr + 'T00:00:00');
     const allowEdit = requested >= today;
 
-    // map meals
-    const meals = { dejeuner: null, diner: null };
+    // map meals to slots (slot 1 and 2)
+    const meals = { dejeuner: [], diner: [] };
     for (const r of rows) {
-      meals[r.meal] = r;
+      const slotIndex = r.slot ? r.slot - 1 : 0;
+      meals[r.meal] = meals[r.meal] || [];
+      meals[r.meal][slotIndex] = r;
     }
 
     const twoCols = document.createElement('div');
@@ -146,38 +148,44 @@
       title.textContent = meal === 'dejeuner' ? 'Déjeuner' : 'Dîner';
       part.appendChild(title);
 
-      const assignment = meals[meal];
-      if (!assignment) {
-        const empty = document.createElement('div');
-        empty.className = 'no-menu';
-        empty.textContent = 'Aucun menu assigné';
-        part.appendChild(empty);
-      } else {
-        const name = document.createElement('div');
-        name.className = 'menu-name';
-        name.textContent = assignment.name;
-        part.appendChild(name);
+      // render up to 2 slots
+      for (let slot = 1; slot <= 2; slot++) {
+        const assignment = (meals[meal] && meals[meal][slot-1]) ? meals[meal][slot-1] : null;
+        const slotWrap = document.createElement('div');
+        slotWrap.className = 'meal-slot';
+        if (!assignment) {
+          const empty = document.createElement('div');
+          empty.className = 'no-menu';
+          empty.textContent = `Aucun menu assigné (slot ${slot})`;
+          slotWrap.appendChild(empty);
+        } else {
+          const name = document.createElement('div');
+          name.className = 'menu-name';
+          name.textContent = assignment.name;
+          slotWrap.appendChild(name);
 
-        const avg = document.createElement('div');
-        avg.className = 'menu-avg';
-        avg.textContent = assignment.avg_score ? `Moyenne: ${assignment.avg_score}` : 'Moyenne: —';
-        part.appendChild(avg);
+          const avg = document.createElement('div');
+          avg.className = 'menu-avg';
+          avg.textContent = assignment.avg_score ? `Moyenne: ${assignment.avg_score}` : 'Moyenne: —';
+          slotWrap.appendChild(avg);
 
-        const userScore = assignment.user_score || 0;
-        const stars = createStars(userScore, sessionUser && allowEdit, (s) => setRating(assignment.assignment_id, s));
-        part.appendChild(stars);
+          const userScore = assignment.user_score || 0;
+          const stars = createStars(userScore, sessionUser && allowEdit, (s) => setRating(assignment.assignment_id, s));
+          slotWrap.appendChild(stars);
 
-        if (!sessionUser) {
-          const hint = document.createElement('div');
-          hint.className = 'hint';
-          hint.textContent = 'Connectez-vous pour noter';
-          part.appendChild(hint);
-        } else if (!allowEdit) {
-          const hint2 = document.createElement('div');
-          hint2.className = 'hint';
-          hint2.textContent = 'Les notes pour les jours passés ne sont pas modifiables';
-          part.appendChild(hint2);
+          if (!sessionUser) {
+            const hint = document.createElement('div');
+            hint.className = 'hint';
+            hint.textContent = 'Connectez-vous pour noter';
+            slotWrap.appendChild(hint);
+          } else if (!allowEdit) {
+            const hint2 = document.createElement('div');
+            hint2.className = 'hint';
+            hint2.textContent = 'Les notes pour les jours passés ne sont pas modifiables';
+            slotWrap.appendChild(hint2);
+          }
         }
+        part.appendChild(slotWrap);
       }
 
       twoCols.appendChild(part);
@@ -211,9 +219,11 @@
     }
   }
 
-  async function adminAssign(menu_id, date, meal) {
+  async function adminAssign(menu_id, date, meal, slot) {
     try {
-      await fetchJson('/api/assignments', { method: 'POST', body: { menu_id, date, meal } });
+      const body = { menu_id, date, meal };
+      if (slot) body.slot = slot;
+      await fetchJson('/api/assignments', { method: 'POST', body });
       await refreshCaches();
       renderAdmin();
     } catch (err) {
@@ -321,18 +331,30 @@
       right.style.display = 'flex';
       right.style.flexDirection = 'column';
       right.style.gap = '6px';
-      // Quick assign buttons for today..+7 (assign to both meals possibility via modal)
-      const assignTodayLunch = document.createElement('button');
-      assignTodayLunch.className = 'btn small';
-      assignTodayLunch.textContent = 'Affecter aujourd\' (déj)';
-      assignTodayLunch.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner'));
-      right.appendChild(assignTodayLunch);
+      // Quick assign buttons for today slots (déj1/déj2, dîn1/dîn2)
+      const assignTodayLunch1 = document.createElement('button');
+      assignTodayLunch1.className = 'btn small';
+      assignTodayLunch1.textContent = "Affecter aujourd'hui (déj 1)";
+      assignTodayLunch1.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner', 1));
+      right.appendChild(assignTodayLunch1);
 
-      const assignTodayDinner = document.createElement('button');
-      assignTodayDinner.className = 'btn small';
-      assignTodayDinner.textContent = 'Affecter aujourd\'hui (dîn)';
-      assignTodayDinner.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner'));
-      right.appendChild(assignTodayDinner);
+      const assignTodayLunch2 = document.createElement('button');
+      assignTodayLunch2.className = 'btn small';
+      assignTodayLunch2.textContent = "Affecter aujourd'hui (déj 2)";
+      assignTodayLunch2.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner', 2));
+      right.appendChild(assignTodayLunch2);
+
+      const assignTodayDinner1 = document.createElement('button');
+      assignTodayDinner1.className = 'btn small';
+      assignTodayDinner1.textContent = "Affecter aujourd'hui (dîn 1)";
+      assignTodayDinner1.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner', 1));
+      right.appendChild(assignTodayDinner1);
+
+      const assignTodayDinner2 = document.createElement('button');
+      assignTodayDinner2.className = 'btn small';
+      assignTodayDinner2.textContent = "Affecter aujourd'hui (dîn 2)";
+      assignTodayDinner2.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner', 2));
+      right.appendChild(assignTodayDinner2);
 
       const editBtn = document.createElement('button');
       editBtn.className = 'btn small';
@@ -350,7 +372,7 @@
     gridWrap.style.marginTop = '12px';
     const gridTitle = document.createElement('div');
     gridTitle.style.fontWeight = '700';
-    gridTitle.textContent = 'Planning (aujourd\'hui → +7 jours)';
+    gridTitle.textContent = "Planning (aujourd'hui → +7 jours)";
     gridWrap.appendChild(gridTitle);
 
     const grid = document.createElement('div');
@@ -371,58 +393,92 @@
       dayLabel.textContent = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
       cell.appendChild(dayLabel);
 
-      // find assignments for that date
+      // find assignments for that date and map to slots
       const dayEntry = upcomingCache.find(e => e.date === dateStr);
-      let lunchName = '—', dinnerName = '—', lunchId = null, dinnerId = null;
+      const lunchSlots = {1: {name: '—', menu_id: null}, 2: {name: '—', menu_id: null}};
+      const dinnerSlots = {1: {name: '—', menu_id: null}, 2: {name: '—', menu_id: null}};
       if (dayEntry && Array.isArray(dayEntry.assignments)) {
         for (const a of dayEntry.assignments) {
-          if (a.meal === 'dejeuner') { lunchName = a.name; lunchId = a.assignment_id; }
-          if (a.meal === 'diner') { dinnerName = a.name; dinnerId = a.assignment_id; }
+          const s = a.slot ? a.slot : 1;
+          if (a.meal === 'dejeuner') {
+            lunchSlots[s] = { name: a.name, menu_id: a.menu_id, assignment_id: a.assignment_id };
+          }
+          if (a.meal === 'diner') {
+            dinnerSlots[s] = { name: a.name, menu_id: a.menu_id, assignment_id: a.assignment_id };
+          }
         }
       }
+
+      // Lunch title
       const lunchDiv = document.createElement('div');
-      lunchDiv.innerHTML = `<div style="font-weight:600">Déj</div><div style="font-size:13px">${lunchName}</div>`;
+      lunchDiv.style.fontWeight = '600';
+      lunchDiv.style.marginBottom = '4px';
+      lunchDiv.textContent = 'Déjeuner';
       cell.appendChild(lunchDiv);
 
-      const lunchSel = document.createElement('select');
-      const optEmptyL = document.createElement('option');
-      optEmptyL.value = '';
-      optEmptyL.textContent = 'Affecter…';
-      lunchSel.appendChild(optEmptyL);
-      menusCache.forEach(m => {
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.textContent = m.name;
-        lunchSel.appendChild(o);
-      });
-      lunchSel.addEventListener('change', () => {
-        const menuId = Number(lunchSel.value);
-        if (!menuId) return;
-        adminAssign(menuId, dateStr, 'dejeuner');
-      });
-      cell.appendChild(lunchSel);
+      for (let s = 1; s <= 2; s++) {
+        const slot = lunchSlots[s];
+        const slotDiv = document.createElement('div');
+        slotDiv.style.fontSize = '13px';
+        slotDiv.style.marginBottom = '4px';
+        slotDiv.textContent = `Slot ${s}: ${slot.name}`;
+        cell.appendChild(slotDiv);
 
+        const lunchSel = document.createElement('select');
+        const optEmptyL = document.createElement('option');
+        optEmptyL.value = '';
+        optEmptyL.textContent = 'Affecter…';
+        lunchSel.appendChild(optEmptyL);
+        menusCache.forEach(mm => {
+          const o = document.createElement('option');
+          o.value = mm.id;
+          o.textContent = mm.name;
+          lunchSel.appendChild(o);
+        });
+        if (slot.menu_id) lunchSel.value = slot.menu_id;
+        lunchSel.addEventListener('change', () => {
+          const menuId = Number(lunchSel.value);
+          if (!menuId) return;
+          adminAssign(menuId, dateStr, 'dejeuner', s);
+        });
+        cell.appendChild(lunchSel);
+      }
+
+      // Dinner title
       const dinnerDiv = document.createElement('div');
-      dinnerDiv.innerHTML = `<div style="font-weight:600; margin-top:6px">Dîn</div><div style="font-size:13px">${dinnerName}</div>`;
+      dinnerDiv.style.fontWeight = '600';
+      dinnerDiv.style.marginTop = '6px';
+      dinnerDiv.style.marginBottom = '4px';
+      dinnerDiv.textContent = 'Dîner';
       cell.appendChild(dinnerDiv);
 
-      const dinnerSel = document.createElement('select');
-      const optEmptyD = document.createElement('option');
-      optEmptyD.value = '';
-      optEmptyD.textContent = 'Affecter…';
-      dinnerSel.appendChild(optEmptyD);
-      menusCache.forEach(m => {
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.textContent = m.name;
-        dinnerSel.appendChild(o);
-      });
-      dinnerSel.addEventListener('change', () => {
-        const menuId = Number(dinnerSel.value);
-        if (!menuId) return;
-        adminAssign(menuId, dateStr, 'diner');
-      });
-      cell.appendChild(dinnerSel);
+      for (let s = 1; s <= 2; s++) {
+        const slot = dinnerSlots[s];
+        const slotDiv = document.createElement('div');
+        slotDiv.style.fontSize = '13px';
+        slotDiv.style.marginBottom = '4px';
+        slotDiv.textContent = `Slot ${s}: ${slot.name}`;
+        cell.appendChild(slotDiv);
+
+        const dinnerSel = document.createElement('select');
+        const optEmptyD = document.createElement('option');
+        optEmptyD.value = '';
+        optEmptyD.textContent = 'Affecter…';
+        dinnerSel.appendChild(optEmptyD);
+        menusCache.forEach(mm => {
+          const o = document.createElement('option');
+          o.value = mm.id;
+          o.textContent = mm.name;
+          dinnerSel.appendChild(o);
+        });
+        if (slot.menu_id) dinnerSel.value = slot.menu_id;
+        dinnerSel.addEventListener('change', () => {
+          const menuId = Number(dinnerSel.value);
+          if (!menuId) return;
+          adminAssign(menuId, dateStr, 'diner', s);
+        });
+        cell.appendChild(dinnerSel);
+      }
 
       grid.appendChild(cell);
     }

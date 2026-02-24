@@ -44,17 +44,46 @@ async function initDb() {
     );
   `);
 
-  await db.runAsync(`
-    CREATE TABLE IF NOT EXISTS menu_assignments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
-      date TEXT NOT NULL, -- YYYY-MM-DD
-      meal TEXT NOT NULL CHECK(meal IN ('dejeuner','diner')),
-      assigned_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(date, meal)
-    );
-  `);
+  // Support two slots per meal (slot 1 and 2). Migrate existing table if needed.
+  // We check PRAGMA table_info to detect whether the existing menu_assignments table exists
+  // and whether it already has the 'slot' column. If not present we'll either create the
+  // table with the new schema or migrate existing data into a new table preserving ids.
+  const maCols = await db.allAsync(`PRAGMA table_info(menu_assignments)`);
+  if (maCols.length === 0) {
+    // table doesn't exist — create with slot and unique constraint on (date, meal, slot)
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS menu_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        meal TEXT NOT NULL CHECK(meal IN ('dejeuner','diner')),
+        slot INTEGER NOT NULL DEFAULT 1 CHECK(slot IN (1,2)),
+        assigned_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(date, meal, slot)
+      );
+    `);
+  } else if (!maCols.find(c => c.name === 'slot')) {
+    // migrate existing table: rename, recreate new schema, copy rows with slot=1, drop old
+    await db.runAsync(`ALTER TABLE menu_assignments RENAME TO menu_assignments_old;`);
+    await db.runAsync(`
+      CREATE TABLE menu_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        menu_id INTEGER NOT NULL REFERENCES menus(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        meal TEXT NOT NULL CHECK(meal IN ('dejeuner','diner')),
+        slot INTEGER NOT NULL DEFAULT 1 CHECK(slot IN (1,2)),
+        assigned_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(date, meal, slot)
+      );
+    `);
+    await db.runAsync(`
+      INSERT INTO menu_assignments (id, menu_id, date, meal, slot, assigned_by, created_at)
+      SELECT id, menu_id, date, meal, 1 as slot, assigned_by, created_at FROM menu_assignments_old;
+    `);
+    await db.runAsync(`DROP TABLE menu_assignments_old;`);
+  }
 
   await db.runAsync(`
     CREATE TABLE IF NOT EXISTS ratings (
@@ -200,9 +229,13 @@ async function getMenusSorted(sort = 'alpha') {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Ensure the session store uses the directory + filename derived from DB_PATH.
+  // connect-sqlite3 expects 'db' to be the filename and 'dir' to be the directory.
+  const storeDbFile = path.basename(DB_PATH);
+  const storeDir = path.dirname(DB_PATH) || '.';
   app.use(
     session({
-      store: new SQLiteStore({ db: DB_PATH, dir: '/' }), // connect-sqlite3 will use given file
+      store: new SQLiteStore({ db: storeDbFile, dir: storeDir }),
       secret: SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
@@ -300,9 +333,10 @@ async function getMenusSorted(sort = 'alpha') {
     res.json(list);
   });
 
-  // Assign menu to a date+meal (cuisinier)
+  // Assign menu to a date+meal+slot (cuisinier)
+  // Supports slot 1 or 2. If slot is not provided, defaults to 1.
   app.post('/api/assignments', requireAuth, requireCuisinier, async (req, res) => {
-    const { menu_id, date, meal } = req.body;
+    const { menu_id, date, meal, slot } = req.body;
     if (!menu_id || !date || !meal) return res.status(400).json({ error: 'menu_id, date, meal required' });
 
     const d = dayjs(date, 'YYYY-MM-DD', true);
@@ -315,12 +349,16 @@ async function getMenusSorted(sort = 'alpha') {
     }
     if (!['dejeuner', 'diner'].includes(meal)) return res.status(400).json({ error: 'invalid meal' });
 
+    const s = slot ? Number(slot) : 1;
+    if (![1,2].includes(s)) return res.status(400).json({ error: 'slot must be 1 or 2' });
+
     try {
       await db.runAsync(
-        `INSERT OR REPLACE INTO menu_assignments (menu_id, date, meal, assigned_by) VALUES (?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO menu_assignments (menu_id, date, meal, slot, assigned_by) VALUES (?, ?, ?, ?, ?)`,
         menu_id,
         d.format('YYYY-MM-DD'),
         meal,
+        s,
         req.session.user.id
       );
       res.json({ ok: true });
@@ -337,11 +375,11 @@ async function getMenusSorted(sort = 'alpha') {
     if (!d.isValid()) return res.status(400).json({ error: 'invalid date' });
 
     const rows = await db.allAsync(
-      `SELECT ma.id as assignment_id, ma.date, ma.meal, m.id as menu_id, m.name
+      `SELECT ma.id as assignment_id, ma.date, ma.meal, ma.slot, m.id as menu_id, m.name
        FROM menu_assignments ma
        JOIN menus m ON m.id = ma.menu_id
        WHERE ma.date = ?
-       ORDER BY CASE WHEN ma.meal = 'dejeuner' THEN 0 ELSE 1 END`,
+       ORDER BY CASE WHEN ma.meal = 'dejeuner' THEN 0 ELSE 1 END, ma.slot ASC`,
       d.format('YYYY-MM-DD')
     );
 
@@ -365,7 +403,7 @@ async function getMenusSorted(sort = 'alpha') {
         `SELECT AVG(score) as avg_score FROM ratings WHERE assignment_id = ?`,
         r.assignment_id
       );
-      r.avg_score = avg && avg.avg_score ? Number(avg.avg_score).toFixed(2) : null;
+      r.avg_score = avg && avg.avg_score ?(avg.avg_score).toFixed(2) : null;
     }
 
     res.json(rows);
@@ -432,11 +470,11 @@ async function getMenusSorted(sort = 'alpha') {
     for (let i = 0; i <= days; i++) {
       const d = today.add(i, 'day').format('YYYY-MM-DD');
       const rows = await db.allAsync(
-        `SELECT ma.id as assignment_id, ma.date, ma.meal, m.id as menu_id, m.name
+        `SELECT ma.id as assignment_id, ma.date, ma.meal, ma.slot, m.id as menu_id, m.name
          FROM menu_assignments ma
          JOIN menus m ON m.id = ma.menu_id
          WHERE ma.date = ?
-         ORDER BY CASE WHEN ma.meal = 'dejeuner' THEN 0 ELSE 1 END`,
+         ORDER BY CASE WHEN ma.meal = 'dejeuner' THEN 0 ELSE 1 END, ma.slot ASC`,
         d
       );
       results.push({ date: d, assignments: rows });
