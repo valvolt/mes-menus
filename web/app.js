@@ -331,30 +331,6 @@
       right.style.display = 'flex';
       right.style.flexDirection = 'column';
       right.style.gap = '6px';
-      // Quick assign buttons for today slots (déj1/déj2, dîn1/dîn2)
-      const assignTodayLunch1 = document.createElement('button');
-      assignTodayLunch1.className = 'btn small';
-      assignTodayLunch1.textContent = "Affecter aujourd'hui (déj 1)";
-      assignTodayLunch1.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner', 1));
-      right.appendChild(assignTodayLunch1);
-
-      const assignTodayLunch2 = document.createElement('button');
-      assignTodayLunch2.className = 'btn small';
-      assignTodayLunch2.textContent = "Affecter aujourd'hui (déj 2)";
-      assignTodayLunch2.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'dejeuner', 2));
-      right.appendChild(assignTodayLunch2);
-
-      const assignTodayDinner1 = document.createElement('button');
-      assignTodayDinner1.className = 'btn small';
-      assignTodayDinner1.textContent = "Affecter aujourd'hui (dîn 1)";
-      assignTodayDinner1.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner', 1));
-      right.appendChild(assignTodayDinner1);
-
-      const assignTodayDinner2 = document.createElement('button');
-      assignTodayDinner2.className = 'btn small';
-      assignTodayDinner2.textContent = "Affecter aujourd'hui (dîn 2)";
-      assignTodayDinner2.addEventListener('click', () => adminAssign(m.id, fmtDate(new Date()), 'diner', 2));
-      right.appendChild(assignTodayDinner2);
 
       const editBtn = document.createElement('button');
       editBtn.className = 'btn small';
