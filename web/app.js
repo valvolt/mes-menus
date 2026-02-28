@@ -10,6 +10,11 @@
   let isAdminView = false;
   let menusCache = []; // cached menus for admin
   let upcomingCache = []; // cached upcoming assignments for admin
+  let menuFilter = '';
+  function normalize(s) {
+    // remove diacritics and fold case for a more tolerant search
+    return String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  }
 
   function fmtDate(d) {
     const yyyy = d.getFullYear();
@@ -258,6 +263,25 @@
     });
     adminHeader.appendChild(sortSel);
 
+    const filterInput = document.createElement('input');
+    filterInput.id = 'menu-filter';
+    filterInput.placeholder = 'Filtrer les menus…';
+    filterInput.style.padding = '8px';
+    filterInput.style.marginLeft = '8px';
+    filterInput.value = menuFilter;
+    filterInput.addEventListener('input', (e) => {
+      // preserve caret position so focus appears continuous when we re-render
+      const pos = e.target.selectionStart;
+      menuFilter = e.target.value;
+      renderAdmin();
+      const nf = document.getElementById('menu-filter');
+      if (nf) {
+        nf.focus();
+        try { nf.setSelectionRange(pos, pos); } catch (err) { /* ignore if not supported */ }
+      }
+    });
+    adminHeader.appendChild(filterInput);
+
     const input = document.createElement('input');
     input.placeholder = 'Nouveau menu (nom)';
     input.style.padding = '8px';
@@ -318,9 +342,12 @@
     }
 
     // Menus list
+    const normalizedFilter = normalize(menuFilter);
+    const filteredMenus = normalizedFilter ? menusCache.filter(m => normalize(m.name).includes(normalizedFilter)) : menusCache.slice();
+
     const list = document.createElement('div');
     list.className = 'menu-list';
-    menusCache.forEach(m => {
+    filteredMenus.forEach(m => {
       const item = document.createElement('div');
       item.className = 'menu-item';
       const left = document.createElement('div');
@@ -405,12 +432,22 @@
         optEmptyL.value = '';
         optEmptyL.textContent = 'Affecter…';
         lunchSel.appendChild(optEmptyL);
-        menusCache.forEach(mm => {
+        filteredMenus.forEach(mm => {
           const o = document.createElement('option');
           o.value = mm.id;
           o.textContent = mm.name;
           lunchSel.appendChild(o);
         });
+        // ensure currently assigned menu remains selectable even if filtered out
+        if (slot.menu_id && !filteredMenus.find(x => x.id === slot.menu_id)) {
+          const assigned = menusCache.find(x => x.id === slot.menu_id);
+          if (assigned) {
+            const o = document.createElement('option');
+            o.value = assigned.id;
+            o.textContent = assigned.name;
+            lunchSel.appendChild(o);
+          }
+        }
         if (slot.menu_id) lunchSel.value = slot.menu_id;
         lunchSel.addEventListener('change', () => {
           const menuId = Number(lunchSel.value);
@@ -441,12 +478,22 @@
         optEmptyD.value = '';
         optEmptyD.textContent = 'Affecter…';
         dinnerSel.appendChild(optEmptyD);
-        menusCache.forEach(mm => {
+        filteredMenus.forEach(mm => {
           const o = document.createElement('option');
           o.value = mm.id;
           o.textContent = mm.name;
           dinnerSel.appendChild(o);
         });
+        // ensure currently assigned menu remains selectable even if filtered out
+        if (slot.menu_id && !filteredMenus.find(x => x.id === slot.menu_id)) {
+          const assigned = menusCache.find(x => x.id === slot.menu_id);
+          if (assigned) {
+            const o = document.createElement('option');
+            o.value = assigned.id;
+            o.textContent = assigned.name;
+            dinnerSel.appendChild(o);
+          }
+        }
         if (slot.menu_id) dinnerSel.value = slot.menu_id;
         dinnerSel.addEventListener('change', () => {
           const menuId = Number(dinnerSel.value);
